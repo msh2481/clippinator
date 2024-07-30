@@ -2,23 +2,23 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from beartype import beartype as typed
 from langchain import PromptTemplate
 from langchain.chains.combine_documents.base import BaseCombineDocumentsChain
 from langchain.chains.summarize import load_summarize_chain
 from langchain.chat_models import ChatOpenAI
 from langchain.docstore.document import Document
-from langchain.text_splitter import (
-    RecursiveCharacterTextSplitter,
-)
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from clippinator.tools.tool import SimpleTool
 from .utils import trim_extra, unjson
 
 
+@typed
 def strip_quotes(inp: str) -> str:
     inp = inp.strip()
     if ": " in inp.split("\n", 1)[0] and (
-            "``" in inp.split("\n", 1)[0] or "'''" in inp.split("\n", 1)[0]
+        "``" in inp.split("\n", 1)[0] or "'''" in inp.split("\n", 1)[0]
     ):
         inp = inp.split(": ", 1)[-1].strip()
     if inp.startswith("```"):
@@ -28,9 +28,18 @@ def strip_quotes(inp: str) -> str:
     return inp
 
 
+@typed
 def strip_filename(inp: str) -> str:
     inp = inp.split("=")[-1]
-    return inp.strip().strip("'").strip().split(": ")[-1].split(", ")[0].strip().removeprefix('/')
+    return (
+        inp.strip()
+        .strip("'")
+        .strip()
+        .split(": ")[-1]
+        .split(", ")[0]
+        .strip()
+        .removeprefix("/")
+    )
 
 
 patch_example = """Action: ReadFile
@@ -74,10 +83,12 @@ class WriteFile(SimpleTool):
         "avoid using it on non-empty files. "
     )
 
+    @typed
     def __init__(self, project):
         self.project = project
         self.workdir = project.path
 
+    @typed
     def structured_func(self, to_write: dict[str, str] | Any):
         to_write = unjson(to_write)
         result = ""
@@ -102,6 +113,7 @@ class WriteFile(SimpleTool):
                 result += f"Error writing to {filename}: {str(e)}\n\n"
         return result.strip()
 
+    @typed
     def func(self, args: str) -> str:
         # Use a regular expression to extract the file path from the input
 
@@ -150,15 +162,17 @@ class ReadFile(SimpleTool):
         "Example input: ['file1.py', {'filename': 'file2.py', 'start': 10, 'end': 20}]"
     )
 
+    @typed
     def __init__(self, wd: str = "."):
         self.workdir = wd
 
+    @typed
     def structured_func(self, to_read: list[str | dict[str, str | int] | Any]):
-        if '{' in str(to_read):
+        if "{" in str(to_read):
             to_read = unjson(to_read)
         if isinstance(to_read, str):
             to_read = [to_read]
-        result = ''
+        result = ""
         for item in to_read:
             if isinstance(item, str):
                 # same behavior as before, but without using func
@@ -170,38 +184,39 @@ class ReadFile(SimpleTool):
                         out = "```\n" + "".join(lines) + "\n```"
                         if len(out) > 7000:
                             result += (
-                                    trim_extra(out, 7000)
-                                    + "\n```\nFile too long, use the summarizer or "
-                                      "(preferably) request specific line ranges.\n\n"
+                                trim_extra(out, 7000)
+                                + "\n```\nFile too long, use the summarizer or "
+                                "(preferably) request specific line ranges.\n\n"
                             )
                         else:
-                            result += out + '\n\n'
+                            result += out + "\n\n"
                 except Exception as e:
                     result += f"Error reading file: {str(e)}\n\n"
             elif isinstance(item, dict):
                 # read a specific range
                 try:
-                    filename = strip_filename(item['filename'])
-                    start = item.get('start', 1)
-                    end = item.get('end', None)
+                    filename = strip_filename(item["filename"])
+                    start = item.get("start", 1)
+                    end = item.get("end", None)
                     with open(os.path.join(self.workdir, filename), "r") as f:
                         lines = f.readlines()
                         lines = [f"{i + 1}|{line}" for i, line in enumerate(lines)]
-                        out = "```\n" + "".join(lines[start - 1:end]) + "\n```"
+                        out = "```\n" + "".join(lines[start - 1 : end]) + "\n```"
                         if len(out) > 6000:
                             result += (
-                                    trim_extra(out, 6000)
-                                    + "\n...\nFile too long, use the summarizer or "
-                                      "(preferably) request specific line ranges.\n\n"
+                                trim_extra(out, 6000)
+                                + "\n...\nFile too long, use the summarizer or "
+                                "(preferably) request specific line ranges.\n\n"
                             )
                         else:
-                            result += out + '\n\n'
+                            result += out + "\n\n"
                 except Exception as e:
                     result += f"Error reading file: {str(e)}\n\n"
         return result.strip()
 
+    @typed
     def func(self, args: str) -> str:
-        if not args.endswith(']'):
+        if not args.endswith("]"):
             filename = strip_filename(args)
             return self.structured_func([filename])
         filename, line_range = args.split("[", 1)
@@ -210,14 +225,21 @@ class ReadFile(SimpleTool):
         line_ranges = [line_range.split(":") for line_range in line_ranges]
         line_ranges = [
             (
-                int(line_range[0].strip().strip('l') or 1) - 1,
-                int(line_range[1].strip().strip('l') or None))
+                int(line_range[0].strip().strip("l") or 1) - 1,
+                int(line_range[1].strip().strip("l") or None),
+            )
             for line_range in line_ranges
         ]
-        return self.structured_func([{'filename': filename, 'start': start, 'end': end} for start, end in line_ranges])
+        return self.structured_func(
+            [
+                {"filename": filename, "start": start, "end": end}
+                for start, end in line_ranges
+            ]
+        )
 
 
-def parse_patch(patch):
+@typed
+def parse_patch(patch: str) -> list[dict[str, Any]]:
     # Split the patch into lines
     patch_lines = patch.strip().split("\n")
 
@@ -226,19 +248,19 @@ def parse_patch(patch):
 
     while patch_index < len(patch_lines):
         if (
-                patch_index < len(patch_lines)
-                and patch_lines[patch_index].startswith("[")
-                and patch_lines[patch_index].endswith("]")
+            patch_index < len(patch_lines)
+            and patch_lines[patch_index].startswith("[")
+            and patch_lines[patch_index].endswith("]")
         ):
             # Parse the range from the patch
             range_str = patch_lines[patch_index][1:-1]
             try:
                 if "-" in range_str:
                     range_start, range_end = map(int, range_str.split("-"))
-                    type = 'remove' if range_start == range_end else 'replace'
+                    type = "remove" if range_start == range_end else "replace"
                 else:
                     range_start = range_end = int(range_str)
-                    type = 'insert'
+                    type = "insert"
                     range_end -= 1
             except ValueError:
                 raise ValueError(
@@ -253,26 +275,28 @@ def parse_patch(patch):
             patch_index += 1
             replacements = []
             while patch_index < len(patch_lines) and not (
-                    patch_lines[patch_index].startswith("[")
-                    and patch_lines[patch_index].endswith("]")
+                patch_lines[patch_index].startswith("[")
+                and patch_lines[patch_index].endswith("]")
             ):
                 replacements.append(patch_lines[patch_index])
                 patch_index += 1
 
-            patch_dict = {'type': type, 'start': range_start, 'end': range_end}
+            patch_dict = {"type": type, "start": range_start, "end": range_end}
             if replacements:
-                patch_dict['content'] = "\n".join(replacements)
+                patch_dict["content"] = "\n".join(replacements)
 
             patches.append(patch_dict)
     return patches
 
 
-def apply_patch_str(file_content: str, patch: str):
+@typed
+def apply_patch_str(file_content: str, patch: str) -> str:
     patches = parse_patch(patch)
     return apply_patch(file_content, patches)
 
 
-def apply_patch(file_content: str, patches: list[dict[str, Any]]):
+@typed
+def apply_patch(file_content: str, patches: list[dict[str, Any]]) -> str:
     # Split the content into lines
     content_lines = file_content.strip().split("\n")
 
@@ -281,30 +305,30 @@ def apply_patch(file_content: str, patches: list[dict[str, Any]]):
 
     for patch in patches:
         # Check if the ranges overlap
-        if patch['start'] <= last_end_line:
+        if patch["start"] <= last_end_line:
             raise ValueError(
                 f"Line ranges overlap. Previous range ends at line {last_end_line + 1}, but next range starts at line {patch['start'] + 1}."
             )
 
-        last_end_line = patch['end']
+        last_end_line = patch["end"]
 
         # Append lines from content that are before the range
-        while last_end_line < patch['start']:
+        while last_end_line < patch["start"]:
             new_content.append(content_lines[last_end_line])
             last_end_line += 1
 
         # Handle replace and remove
-        if patch['type'] in ('replace', 'remove'):
+        if patch["type"] in ("replace", "remove"):
             # Skip lines from content that are within the range
-            last_end_line = patch['end'] + 1
+            last_end_line = patch["end"] + 1
 
             # Append the replacement lines
-            if patch['type'] == 'replace':
-                new_content.extend(patch['content'].split("\n"))
+            if patch["type"] == "replace":
+                new_content.extend(patch["content"].split("\n"))
 
         # Handle insert
-        elif patch['type'] == 'insert':
-            new_content.extend(patch['content'].split("\n"))
+        elif patch["type"] == "insert":
+            new_content.extend(patch["content"].split("\n"))
 
     # Append any remaining lines from content
     new_content.extend(content_lines[last_end_line:])
@@ -343,9 +367,11 @@ The patches are a list of modifications, each of them can be one of the followin
 {'type': 'insert', 'after_line': ..., 'content': '...}: to insert lines into the content. The 'after_line' key specifies the line after which new content will be inserted, and the 'content' key provides the new content.
 """
 
+    @typed
     def __init__(self, wd: str = "."):
         self.workdir = wd
 
+    @typed
     def structured_func(self, filename: str, patches: list[dict[str, Any]]) -> str:
         filename = os.path.join(self.workdir, filename)
         try:
@@ -356,12 +382,13 @@ The patches are a list of modifications, each of them can be one of the followin
             file.write(new_content)
         return f"Successfully patched {filename}."
 
+    @typed
     def func(self, args: str) -> str:
         if "\n" not in strip_quotes(args):
             return (
-                    "Error: no newline found in input. "
-                    "The first line should be the filename, the rest should be the patch."
-                    " Here is an example of patching:\n" + patch_example
+                "Error: no newline found in input. "
+                "The first line should be the filename, the rest should be the patch."
+                " Here is an example of patching:\n" + patch_example
             )
         filename, patch = strip_quotes(args).split("\n", 1)
         filename = strip_filename(filename)
@@ -403,6 +430,7 @@ class SummarizeFile(SimpleTool):
     summary_agent: BaseCombineDocumentsChain
     text_splitter: RecursiveCharacterTextSplitter
 
+    @typed
     def __init__(self, wd: str = ".", model_name: str = "gpt-3.5-turbo"):
         self.workdir = wd
         mr_prompt = PromptTemplate(
@@ -416,11 +444,12 @@ class SummarizeFile(SimpleTool):
         )
         self.text_splitter = RecursiveCharacterTextSplitter()
 
+    @typed
     def func(self, args: str) -> str:
         try:
             with open(os.path.join(self.workdir, strip_filename(args)), "r") as f:
-                inp = f.readlines()
-                inp = "".join([f"{i + 1}| {line}" for i, line in enumerate(inp)])
+                inp_list = f.readlines()
+                inp = "".join([f"{i + 1}| {line}" for i, line in enumerate(inp_list)])
                 texts = self.text_splitter.split_text(inp)
                 docs = [Document(page_content=t) for t in texts]
                 result = self.summary_agent.run(docs)

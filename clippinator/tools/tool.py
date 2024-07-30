@@ -3,12 +3,14 @@ from functools import wraps
 from typing import Any
 
 import requests
+from beartype import beartype as typed
 from langchain.agents import Tool
 from langchain.tools import StructuredTool
 from typer import prompt
 
 
 def wrap_tool_function(func: typing.Callable[..., str]) -> typing.Callable[..., str]:
+    @typed
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> str:
         try:
@@ -27,13 +29,20 @@ class SimpleTool:
     structured_desc: str | None = None
     args_schema: Any | None = None
 
+    @typed
     def get_tool(self, try_structured: bool = True) -> Tool | StructuredTool:
         if self.structured_func and try_structured:
-            return StructuredTool.from_function(wrap_tool_function(self.structured_func),
-                                                name=self.name,
-                                                description=self.structured_desc or self.description,
-                                                args_schema=self.args_schema)
-        return Tool(name=self.name, func=wrap_tool_function(self.func), description=self.description)
+            return StructuredTool.from_function(
+                wrap_tool_function(self.structured_func),
+                name=self.name,
+                description=self.structured_desc or self.description,
+                args_schema=self.args_schema,
+            )
+        return Tool(
+            name=self.name,
+            func=wrap_tool_function(self.func),
+            description=self.description,
+        )
 
 
 class WarningTool(SimpleTool):
@@ -41,6 +50,7 @@ class WarningTool(SimpleTool):
     description: str = "A tool that can be used to warn the agent about something."
 
     @staticmethod
+    @typed
     def func(args: str) -> str:
         return args + "\n"
 
@@ -53,6 +63,7 @@ class HumanInputTool(SimpleTool):
     )
 
     @staticmethod
+    @typed
     def func(args: str) -> str:
         print()
         return prompt(args)
@@ -66,6 +77,7 @@ class HTTPGetTool(SimpleTool):
     )
 
     @staticmethod
+    @typed
     def func(args: str) -> str:
         url = args
         try:

@@ -8,8 +8,9 @@ import subprocess
 import time
 from abc import ABC
 from dataclasses import dataclass
-from typing import List, Union
+from typing import Any, List, Union
 
+from beartype import beartype as typed
 from langchain.agents import Tool
 
 from .file_tools import strip_quotes
@@ -17,24 +18,26 @@ from .tool import SimpleTool
 from .utils import trim_extra
 
 env = dict(os.environ.copy())
-env.pop('VIRTUAL_ENV', None)
-env['PATH'] = env.get('PATH', '').split(':', 1)[-1]
+env.pop("VIRTUAL_ENV", None)
+env["PATH"] = env.get("PATH", "").split(":", 1)[-1]
 
 
 class RunBash:
     """Executes bash commands and returns the output."""
 
+    @typed
     def __init__(
-            self,
-            strip_newlines: bool = False,
-            return_err_output: bool = False,
-            workdir: str = ".",
+        self,
+        strip_newlines: bool = False,
+        return_err_output: bool = False,
+        workdir: str = ".",
     ):
         """Initialize with stripping newlines."""
         self.strip_newlines = strip_newlines
         self.return_err_output = return_err_output
         self.workdir = workdir
 
+    @typed
     def run(self, commands: Union[str, List[str]]) -> str:
         """Run commands and return final output."""
         if isinstance(commands, str):
@@ -43,12 +46,12 @@ class RunBash:
 
         try:
             completed_process = subprocess.run(
-                ['bash', '-c', commands],
+                ["bash", "-c", commands],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 cwd=self.workdir,
                 timeout=70,
-                env=env
+                env=env,
             )
         except subprocess.TimeoutExpired as error:
             return "Command timed out, possibly due to asking for input."
@@ -67,25 +70,27 @@ class RunBash:
 class RunPython:
     """Executes bash commands and returns the output."""
 
+    @typed
     def __init__(
-            self,
-            strip_newlines: bool = False,
-            return_err_output: bool = False,
-            workdir: str = ".",
+        self,
+        strip_newlines: bool = False,
+        return_err_output: bool = False,
+        workdir: str = ".",
     ):
         """Initialize with stripping newlines."""
         self.strip_newlines = strip_newlines
         self.return_err_output = return_err_output
         self.workdir = workdir
 
+    @typed
     def run(self, commands: str) -> str:
         """Run commands and return final output."""
 
         if not commands.strip():
-            return ''
+            return ""
         try:
             completed_process = subprocess.run(
-                ['python', '-c', strip_quotes(commands)],
+                ["python", "-c", strip_quotes(commands)],
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -107,7 +112,7 @@ class RunPython:
 
 
 # Yes, the current processes are stored in a global variable
-bash_processes = []
+bash_processes: list[dict[str, Any]] = []
 
 
 @dataclass
@@ -115,6 +120,7 @@ class BashBackgroundSessions(SimpleTool):
     name = "BashBackground"
     description = "A tool that can be used to run bash commands in the background."
 
+    @typed
     def __init__(self, wd: str):
         self.workdir = wd
         self.description = (
@@ -125,13 +131,16 @@ class BashBackgroundSessions(SimpleTool):
             "    - `/logs <pid>` gets the output of a process\n"
             "    - `/list` lists all current processes\n"
         )
-        self.description += 'Current processes:\n'
+        self.description += "Current processes:\n"
         for process in bash_processes:
-            self.description += f'    - pid: {process["pr"].pid}| `{process["args"][:50]}`\n'
+            self.description += (
+                f'    - pid: {process["pr"].pid}| `{process["args"][:50]}`\n'
+            )
 
+    @typed
     def func(self, args: str) -> str:
         global bash_processes
-        args = args.strip().strip('`').strip("'").strip('"').strip()
+        args = args.strip().strip("`").strip("'").strip('"').strip()
         if args == "/killall":
             for process in bash_processes:
                 process["pr"].kill()
@@ -149,7 +158,7 @@ class BashBackgroundSessions(SimpleTool):
                     return f"Killed process with pid {pid}.\n"
             return f"Could not find process with pid {pid}.\n"
         elif args.startswith("/logs"):
-            if ' ' not in args:
+            if " " not in args:
                 return "Please specify a pid.\n"
             pid = int(args.split()[1])
             for process in bash_processes:
@@ -157,13 +166,19 @@ class BashBackgroundSessions(SimpleTool):
                     fd = process["pr"].stdout.fileno()
                     fl = fcntl.fcntl(fd, fcntl.F_GETFL)
                     fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-                    ready_to_read, _, _ = select.select([process["pr"].stdout], [], [], 0)
-                    output = '\n'.join([part.read() for part in ready_to_read])
-                    return '```\n' + trim_extra(output) + '\n```\n'
+                    ready_to_read, _, _ = select.select(
+                        [process["pr"].stdout], [], [], 0
+                    )
+                    output = "\n".join([part.read() for part in ready_to_read])
+                    return "```\n" + trim_extra(output) + "\n```\n"
             return f"Could not find process with pid {pid}.\n"
         elif args.startswith("/list"):
-            return 'Current processes:\n' + '\n'.join(
-                [f'    - pid: {process["pr"].pid}| `{process["args"][:50]}`' for process in bash_processes])
+            return "Current processes:\n" + "\n".join(
+                [
+                    f'    - pid: {process["pr"].pid}| `{process["args"][:50]}`'
+                    for process in bash_processes
+                ]
+            )
         else:
             process = subprocess.Popen(
                 ["/bin/bash"],
@@ -177,20 +192,22 @@ class BashBackgroundSessions(SimpleTool):
             fd = process.stdout.fileno()
             fl = fcntl.fcntl(fd, fcntl.F_GETFL)
             fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
-            process.stdin.write(args + '\n')
+            process.stdin.write(args + "\n")
             process.stdin.close()
             bash_processes.append({"pr": process, "args": args})
             time.sleep(8)
             # Read current output
             ready_to_read, _, _ = select.select([process.stdout], [], [], 0)
-            output = trim_extra('\n'.join([part.read() for part in ready_to_read]))
+            output = trim_extra("\n".join([part.read() for part in ready_to_read]))
             return f"Started process with pid {process.pid}.\n```\n{output}\n```\n"
 
 
+@typed
 def get_pids() -> list[int]:
     return [process["pr"].pid for process in bash_processes]
 
 
+@typed
 def end_sessions(allow_pids: list[int] | None = None):
     """End all bash sessions."""
     allow_pids = allow_pids or []
@@ -204,6 +221,7 @@ def end_sessions(allow_pids: list[int] | None = None):
 class BashSession(Tool):
     name: str = "Bash Session"
 
+    @typed
     def __init__(self, timeout: float | None = None):
         self.timeout = timeout
         self.master_fd, self.slave_fd = pty.openpty()
@@ -219,7 +237,8 @@ class BashSession(Tool):
         fl = fcntl.fcntl(self.master_fd, fcntl.F_GETFL)
         fcntl.fcntl(self.master_fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
-    def input(self, command, timeout: float | None = None):
+    @typed
+    def input(self, command: str, timeout: float | None = None) -> str:
         os.write(self.master_fd, (command + "\n").encode())
         output = self._read_output(timeout or self.timeout or 0.5)
 
@@ -229,10 +248,12 @@ class BashSession(Tool):
 
         return output
 
+    @typed
     def run(self, args: str) -> str:
         return self.input(strip_quotes(args))
 
-    def _read_output(self, timeout=0.1):
+    @typed
+    def _read_output(self, timeout: float = 0.1) -> str:
         output = []
         while True:
             rlist, _, _ = select.select([self.master_fd], [], [], timeout)
@@ -248,6 +269,7 @@ class BashSession(Tool):
 
         return "".join(output)
 
+    @typed
     def __del__(self):
         os.close(self.master_fd)
         os.close(self.slave_fd)

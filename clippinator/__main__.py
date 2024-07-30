@@ -20,16 +20,22 @@ def taskmaster(project_path: str, objective: str = ""):
     """
     try:
         if not objective and not os.path.exists(
-                os.path.join(project_path, ".clippinator.pkl")
+            os.path.join(project_path, ".clippinator.pkl")
         ):
             objective = text_prompt("What project do I need to create?\n")
-        if not objective and os.path.exists(os.path.join(project_path, ".clippinator.pkl")):
+        if not objective and os.path.exists(
+            os.path.join(project_path, ".clippinator.pkl")
+        ):
             print(os.path.join(project_path, ".clippinator.pkl"))
-            tm = Taskmaster.load_from_file(os.path.join(project_path, ".clippinator.pkl"))
+            tm = Taskmaster.load_from_file(
+                os.path.join(project_path, ".clippinator.pkl")
+            )
             tm.run(**tm.project.prompt_fields())
             return
         elif os.path.exists(os.path.join(project_path, ".clippinator.pkl")):
-            tm = Taskmaster.load_from_file(os.path.join(project_path, ".clippinator.pkl"))
+            tm = Taskmaster.load_from_file(
+                os.path.join(project_path, ".clippinator.pkl")
+            )
             project = tm.project
             project.objective = objective
             tm = Taskmaster(project)
@@ -44,7 +50,9 @@ def taskmaster(project_path: str, objective: str = ""):
 
 
 if __name__ == "__main__":
-    if not os.environ.get('OPENAI_API_KEY'):
-        rich.print("[bold red]OPENAI_API_KEY is not set.[/bold red] You can set it permanently in .env file.")
-        os.environ['OPENAI_API_KEY'] = text_prompt("Please, enter your OpenAI API key")
+    if not os.environ.get("OPENAI_API_KEY"):
+        rich.print(
+            "[bold red]OPENAI_API_KEY is not set.[/bold red] You can set it permanently in .env file."
+        )
+        os.environ["OPENAI_API_KEY"] = text_prompt("Please, enter your OpenAI API key")
     app()

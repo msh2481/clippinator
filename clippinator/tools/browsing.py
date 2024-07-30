@@ -2,6 +2,7 @@ import time
 
 import html2text
 import requests
+from beartype import beartype as typed
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
@@ -13,10 +14,11 @@ h2t = html2text.HTML2Text()
 h2t.ignore_links = False
 
 
-def render_page(html: str):
-    soup = BeautifulSoup(html, 'html.parser')
+@typed
+def render_page(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
     for tag in soup.findAll(True):
-        if tag.get('id'):
+        if tag.get("id"):
             tag.string = f"[#{tag['id']}] {tag.text}"
     text = trim_extra(h2t.handle(str(soup)))
     return text
@@ -26,13 +28,15 @@ class SeleniumTool(SimpleTool):
     name = "Selenium"
     description = "A tool that can be used to interact with webpages using Selenium."
 
+    @typed
     def ensure_driver(self):
         if not self.driver:
             # Set the logging preferences
             d = DesiredCapabilities.CHROME
-            d['goog:loggingPrefs'] = {'browser': 'ALL'}
+            d["goog:loggingPrefs"] = {"browser": "ALL"}
             self.driver = webdriver.Chrome(desired_capabilities=d)
 
+    @typed
     def __init__(self):
         self.description = (
             "A tool that can be used to interact with webpages using Selenium. "
@@ -50,18 +54,25 @@ class SeleniumTool(SimpleTool):
 
         self.last_log_timestamp = 0
 
-    def render_content(self):
+    @typed
+    def render_content(self) -> str:
         title = self.driver.title
         html = self.driver.page_source
-        console_logs = self.driver.get_log('browser')
-        new_console_logs = [log for log in console_logs if log['timestamp'] > self.last_log_timestamp]
-        self.last_log_timestamp = max(
-            [log['timestamp'] for log in console_logs]) if console_logs else self.last_log_timestamp
+        console_logs = self.driver.get_log("browser")
+        new_console_logs = [
+            log for log in console_logs if log["timestamp"] > self.last_log_timestamp
+        ]
+        self.last_log_timestamp = (
+            max([log["timestamp"] for log in console_logs])
+            if console_logs
+            else self.last_log_timestamp
+        )
 
         text = render_page(html)
 
         return f"Title: {title}\nURL: {self.driver.current_url}\nContent:\n{text}\nNew console logs:\n{new_console_logs}"
 
+    @typed
     def func(self, args: str) -> str:
         args = args.strip()
         command = args.split(" ", 1)[0].strip()
@@ -105,7 +116,7 @@ class SeleniumTool(SimpleTool):
             else:
                 return "Unknown command.\n"
         except Exception as e:
-            return 'error: ' + str(e) + '\n'
+            return "error: " + str(e) + "\n"
 
 
 class GetPage(SimpleTool):
@@ -116,6 +127,7 @@ class GetPage(SimpleTool):
     )
 
     @staticmethod
+    @typed
     def func(args: str) -> str:
         url = args
         try:
