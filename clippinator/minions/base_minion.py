@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from functools import partial
+from types import MethodType
 from typing import Any, Callable, List, Union
 
 import langchain.schema
 from beartype import beartype as typed
-from langchain import LLMChain, PromptTemplate
 from langchain.agents import (
     AgentExecutor,
     AgentOutputParser,
@@ -15,12 +16,13 @@ from langchain.agents import (
     Tool,
 )
 from langchain.agents.openai_functions_agent.base import OpenAIFunctionsAgent
-from langchain.prompts import StringPromptTemplate
+from langchain.chains.llm import LLMChain
+from langchain.prompts import PromptTemplate, StringPromptTemplate
 from langchain.schema import AgentAction, AgentFinish
 from langchain_openai import ChatOpenAI
 
-from clippinator.tools.tool import WarningTool
-from ..tools.utils import ask_for_feedback, trim_extra
+# from clippinator.tools.tool import WarningTool
+# from ..tools.utils import ask_for_feedback, trim_extra
 from .prompts import format_description
 
 long_warning = (
@@ -129,22 +131,24 @@ def remove_project_summaries(text: str) -> str:
 
 
 @typed
-def get_model(model: str = "gpt-4-1106-preview") -> tuple[ChatOpenAI, dict]:
+def get_model(model: str = "gpt-4-1106-preview") -> ChatOpenAI:
     if model.startswith("topology"):
         CLM_KEY = os.environ["CLM_KEY"]
         CLM_PARTITION = os.environ["CLM_PARTITION"]
-        invoke_kwargs = {
-            "extra_body": {
-                "partition_id": CLM_PARTITION,
-            }
-        }
         chat = ChatOpenAI(
             temperature=0.7,
             model_name=model,
             request_timeout=320,
+            base_url="https://topologychat.com/api",
             api_key=CLM_KEY,  # type: ignore
         )
-        return chat, invoke_kwargs
+        invoke_with_kwargs = partial(
+            chat.invoke, extra_body={"partition_id": CLM_PARTITION}
+        )
+        print(chat.invoke)
+        print(dir(chat))
+        # object.__setattr__(chat, "invoke", MethodType(invoke_with_kwargs, chat))
+        return chat
     return ChatOpenAI(
         temperature=0.05 if model != "gpt-3.5-turbo" else 0.7,
         model_name=model,
@@ -171,7 +175,8 @@ class BasicLLM:
 
     @typed
     def __init__(self, base_prompt: str, model: str = "gpt-4-1106-preview") -> None:
-        llm = get_model(model)
+        llm, invoke_kwargs = get_model(model)
+        self.invoke_kwargs = invoke_kwargs
         self.llm = LLMChain(
             llm=llm,
             prompt=PromptTemplate(
@@ -183,7 +188,7 @@ class BasicLLM:
     @typed
     def run(self, **kwargs):
         kwargs["feedback"] = kwargs.get("feedback", "")
-        return self.llm.invoke(**kwargs)
+        return self.llm.invoke(**kwargs, **self.invoke_kwargs)
 
 
 class CustomPromptTemplate(StringPromptTemplate):
@@ -301,7 +306,7 @@ class BaseMinion:
         max_iterations: int = 50,
         allow_feedback: bool = False,
     ) -> None:
-        llm = get_model(model)
+        llm, invoke_kwargs = get_model(model)
 
         agent_toolnames = [tool.name for tool in available_tools]
         available_tools.append(WarningTool().get_tool())
@@ -315,7 +320,7 @@ class BaseMinion:
             agent_toolnames=agent_toolnames,
         )
 
-        llm_chain = LLMChain(llm=llm, prompt=self.prompt)
+        llm_chain = LLMChain(llm=llm, prompt=self.prompt, llm_kwargs=invoke_kwargs)
 
         output_parser = CustomOutputParser()
 
@@ -363,7 +368,8 @@ class BaseMinionOpenAI:
     ) -> None:
         if not model.endswith("-0613"):
             model += "-0613"
-        llm = get_model(model)
+        llm, invoke_kwargs = get_model(model)
+
         agent_toolnames = [tool.name for tool in available_tools]
         prompt = CustomPromptTemplate(
             template=base_prompt,
@@ -422,13 +428,14 @@ class FeedbackMinion:
         check_function: Callable[[str], Any] = lambda x: None,
         model: str = "gpt-4-1106-preview",
     ) -> None:
-        llm = get_model(model)
+        llm, invoke_kwargs = get_model(model)
         self.eval_llm = LLMChain(
             llm=llm,
             prompt=PromptTemplate(
                 template=eval_prompt,
                 input_variables=extract_variable_names(eval_prompt),
             ),
+            llm_kwargs=invoke_kwargs,
         )
         self.underlying_minion = minion
         self.feedback_prompt = feedback_prompt
@@ -460,3 +467,8 @@ class FeedbackMinion:
         kwargs["feedback"] = evaluation.split("Feedback: ", 1)[-1].strip()
         kwargs["previous_result"] = res
         return self.run(**kwargs)
+
+
+if __name__ == "__main__":
+    model = get_model("topology-medium")
+    print(model.invoke("Hello"))

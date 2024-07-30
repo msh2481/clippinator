@@ -3,12 +3,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from beartype import beartype as typed
-from langchain import PromptTemplate
 from langchain.chains.combine_documents.base import BaseCombineDocumentsChain
 from langchain.chains.summarize import load_summarize_chain
-from langchain.chat_models import ChatOpenAI
 from langchain.docstore.document import Document
+from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_openai import ChatOpenAI
 
 from clippinator.tools.tool import SimpleTool
 from .utils import trim_extra, unjson

@@ -3,48 +3,62 @@ from __future__ import annotations
 import os
 import pickle
 
-from langchain import LLMChain
 from langchain.agents import AgentExecutor, LLMSingleActionAgent
+from langchain.chains.llm import LLMChain
 
 from clippinator.project import Project
 from clippinator.tools import get_tools, SimpleTool
 from clippinator.tools.subagents import Subagent
 from clippinator.tools.tool import WarningTool
+from ..tools.utils import ask_for_feedback
 from .base_minion import (
+    BasicLLM,
     CustomOutputParser,
     CustomPromptTemplate,
     extract_variable_names,
     get_model,
-    BasicLLM,
 )
 from .executioner import Executioner, get_specialized_executioners
-from .prompts import taskmaster_prompt, summarize_prompt, format_description, get_selfcall_objective
-from ..tools.utils import ask_for_feedback
+from .prompts import (
+    format_description,
+    get_selfcall_objective,
+    summarize_prompt,
+    taskmaster_prompt,
+)
 
 
 class Taskmaster:
     def __init__(
-            self,
-            project: Project,
-            model: str = "gpt-4-1106-preview",
-            prompt: CustomPromptTemplate | None = None,
-            inner_taskmaster: bool = False
+        self,
+        project: Project,
+        model: str = "gpt-4-1106-preview",
+        prompt: CustomPromptTemplate | None = None,
+        inner_taskmaster: bool = False,
     ):
         self.project = project
         self.specialized_executioners = get_specialized_executioners(project)
         self.default_executioner = Executioner(project)
         self.inner_taskmaster = inner_taskmaster
-        llm = get_model(model)
+        llm, invoke_kwargs = get_model(model)
         tools = get_tools(project)
         tools.append(SelfCall(project).get_tool(try_structured=False))
 
         agent_tool_names = [
-            'DeclareArchitecture', 'ReadFile', 'WriteFile', 'Bash', 'BashBackground', 'Human',
-            'Remember', 'TemplateInfo', 'TemplateSetup', 'SetCI', 'Search'
+            "DeclareArchitecture",
+            "ReadFile",
+            "WriteFile",
+            "Bash",
+            "BashBackground",
+            "Human",
+            "Remember",
+            "TemplateInfo",
+            "TemplateSetup",
+            "SetCI",
+            "Search",
         ]
 
         if not inner_taskmaster:
-            agent_tool_names.append('SelfCall')
+            agent_tool_names.append("SelfCall")
 
         tools.append(
             Subagent(
@@ -65,7 +79,11 @@ class Taskmaster:
         )
         self.prompt.hook = lambda _: self.save_to_file()
 
-        llm_chain = LLMChain(llm=llm, prompt=self.prompt)
+        llm_chain = LLMChain(
+            llm=llm,
+            prompt=self.prompt,
+            llm_kwargs=invoke_kwargs,
+        )
 
         output_parser = CustomOutputParser()
 
@@ -89,8 +107,8 @@ class Taskmaster:
         kwargs["format_description"] = format_description
         try:
             return (
-                    self.agent_executor.run(**kwargs)
-                    or "No result. The execution was probably unsuccessful."
+                self.agent_executor.run(**kwargs)
+                or "No result. The execution was probably unsuccessful."
             )
         except KeyboardInterrupt:
             feedback = ask_for_feedback(lambda: self.project.menu(self.prompt))
@@ -127,21 +145,26 @@ class Taskmaster:
 
 class SelfCall(SimpleTool):
     name = "SelfCall"
-    description = "Initializes the component of the project. " \
-                  "It's highly advised to use this tool for each subfolder from the " \
-                  "\"planned project architecture\" by Architect when this subfolder does not exist in the " \
-                  "current state of project (all folders and files) (or the project structure is empty). " \
-                  "It's A MUST to use this tool right after the Subagent @Architect for every subfolder " \
-                  "from the \"planned project architecture\"." \
-                  "Input parameter - name of the subfolder, a relative path to subfolder from the current location."
+    description = (
+        "Initializes the component of the project. "
+        "It's highly advised to use this tool for each subfolder from the "
+        '"planned project architecture" by Architect when this subfolder does not exist in the '
+        "current state of project (all folders and files) (or the project structure is empty). "
+        "It's A MUST to use this tool right after the Subagent @Architect for every subfolder "
+        'from the "planned project architecture".'
+        "Input parameter - name of the subfolder, a relative path to subfolder from the current location."
+    )
 
     def __init__(self, project: Project):
         self.initial_project = project
         super().__init__()
 
     def structured_func(self, sub_folder: str):
-        sub_project_path = self.initial_project.path + (
-            "/" if not self.initial_project.path.endswith("/") else "") + sub_folder
+        sub_project_path = (
+            self.initial_project.path
+            + ("/" if not self.initial_project.path.endswith("/") else "")
+            + sub_folder
+        )
         cur_objective = self._get_resulting_objective(self.initial_project, sub_folder)
         cur_sub_project = Project(sub_project_path, cur_objective, architecture="")
         taskmaster = Taskmaster(cur_sub_project, inner_taskmaster=True)
@@ -155,7 +178,5 @@ class SelfCall(SimpleTool):
     @staticmethod
     def _get_resulting_objective(initial_project: Project, sub_folder: str) -> str:
         return get_selfcall_objective(
-            initial_project.objective,
-            initial_project.architecture,
-            sub_folder
+            initial_project.objective, initial_project.architecture, sub_folder
         )

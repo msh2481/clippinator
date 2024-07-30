@@ -12,6 +12,9 @@ import langchain.agents.openai_functions_agent.base as oai_func_ag
 import rich
 from beartype import beartype as typed
 from beartype.typing import Callable
+from langchain.agents.output_parsers.openai_functions import (
+    OpenAIFunctionsAgentOutputParser,
+)
 from langchain.schema import AgentAction
 
 
@@ -78,7 +81,7 @@ def unjson(data: str | Any) -> Any:
     return data
 
 
-_parse_ai_message = oai_func_ag._parse_ai_message
+_parse_ai_message = OpenAIFunctionsAgentOutputParser._parse_ai_message
 
 
 @typed
@@ -100,7 +103,11 @@ def parse_openai_function_message_custom(
         raise e
 
 
-oai_func_ag._parse_ai_message = parse_openai_function_message_custom
+setattr(
+    OpenAIFunctionsAgentOutputParser,
+    "_parse_ai_message",
+    parse_openai_function_message_custom,
+)
 
 
 @typed

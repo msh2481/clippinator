@@ -55,4 +55,10 @@ if __name__ == "__main__":
             "[bold red]OPENAI_API_KEY is not set.[/bold red] You can set it permanently in .env file."
         )
         os.environ["OPENAI_API_KEY"] = text_prompt("Please, enter your OpenAI API key")
+    if not os.environ.get("CLM_KEY"):
+        os.environ["CLM_KEY"] = text_prompt("Please, enter your Topology API key")
+    if not os.environ.get("CLM_PARTITION"):
+        os.environ["CLM_PARTITION"] = text_prompt(
+            "Please, enter your Topology's CLM partition ID"
+        )
     app()
